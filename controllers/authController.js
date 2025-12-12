@@ -1,78 +1,148 @@
+// controllers/authController.js
 import genToken from "../config/token.js";
 import User from "../models/userModel.js";
 import bcrypt from "bcryptjs";
 
+/**
+ * User Registration
+ */
 export const signUp = async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
-    const existEmail = await User.findOne({ email });
-    if (existEmail) {
-      return res.status(400).json({ message: "email already exists !" });
+    // Basic validation
+    if (!name || !email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "Name, email and password are required",
+      });
     }
+
     if (password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: "Password must be at least 6 characters",
+      });
+    }
+
+    // Check if user exists
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
       return res
         .status(400)
-        .json({ message: "password must be at least 6 characters !" });
+        .json({ success: false, message: "Email already exists" });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 12);
 
+    // Create user
     const user = await User.create({
       name,
-      password: hashedPassword,
       email,
+      password: hashedPassword,
     });
 
+    // Generate JWT
     const token = await genToken(user._id);
 
+    // Send cookie
     res.cookie("token", token, {
       httpOnly: true,
-      maxAge: 7 * 24 * 60 * 60 * 1000,
+      secure: process.env.NODE_ENV === "production", // secure in prod
       sameSite: "strict",
-      secure: false,
+      maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    return res.status(201).json(user);
+    // Remove password before sending user
+    const userData = user.toObject();
+    delete userData.password;
+
+    return res.status(201).json({
+      success: true,
+      message: "User registered successfully",
+      data: userData,
+    });
   } catch (error) {
-    return res.status(500).json({ message: `sign up error ${error}` });
+    console.error("Signup error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Signup failed",
+    });
   }
 };
 
+/**
+ * User Login
+ */
 export const Login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "Email and password are required",
+      });
+    }
+
     const user = await User.findOne({ email });
     if (!user) {
-      return res.status(400).json({ message: "email does not exists !" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid email or password" });
     }
-    const isMatch = await bcrypt.compare(password, user.password);
 
+    // Compare passwords
+    const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
-      return res.status(400).json({ message: "incorrect password" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid email or password" });
     }
 
     const token = await genToken(user._id);
 
     res.cookie("token", token, {
       httpOnly: true,
-      maxAge: 7 * 24 * 60 * 60 * 1000,
+      secure: process.env.NODE_ENV === "production",
       sameSite: "strict",
-      secure: false,
+      maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    return res.status(200).json(user);
+    const userData = user.toObject();
+    delete userData.password;
+
+    return res.status(200).json({
+      success: true,
+      message: "Logged in successfully",
+      data: userData,
+    });
   } catch (error) {
-    return res.status(500).json({ message: `login error ${error}` });
+    console.error("Login error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Login failed",
+    });
   }
 };
 
+/**
+ * Logout
+ */
 export const logOut = async (req, res) => {
   try {
     res.clearCookie("token");
-    return res.status(200).json({ message: "log out successfully" });
+
+    return res.status(200).json({
+      success: true,
+      message: "Logged out successfully",
+    });
   } catch (error) {
-    return res.status(500).json({ message: `logout error ${error}` });
+    console.error("Logout error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Logout failed",
+    });
   }
 };
